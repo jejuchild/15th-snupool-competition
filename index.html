@@ -7,15 +7,16 @@
   <style>
     html, body { height: 100%; background:#0a0a0a; color:#f3f4f6; font-family:sans-serif; }
     .card { border-radius:16px; background:#1a1a1a; box-shadow:0 2px 6px rgba(0,0,0,0.5); border:1px solid #333; }
-    .btn { display:inline-flex; align-items:center; justify-content:center; padding:6px 12px; border-radius:8px; background:#444; cursor:pointer; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 16px; border-radius:8px; background:#444; cursor:pointer; font-size:18px; }
     .btn:hover { background:#666; }
-    .tab { padding:6px 12px; border-radius:8px; cursor:pointer; }
-    .tab-active { background:#555; }
-    .list-scroll { height: calc(100vh - 220px); overflow-y:auto; }
+    .tab, .btn { border:none; background:none; color:inherit; }
+    .tab { padding:8px 16px; cursor:pointer; font-size:20px; }
+    .tab-active { text-decoration: underline; }
+    .list-scroll { height: calc(100vh - 220px); overflow-y:auto; font-size:18px; }
     .mono { font-variant-numeric: tabular-nums; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { border:1px solid #555; padding:6px 8px; text-align:center; }
-    th { background:#222; }
+    table { width:100%; border-collapse:collapse; font-size:22px; }
+    th, td { border:1px solid #555; padding:10px 12px; text-align:center; }
+    th { background:#222; font-size:24px; }
     /* 전체화면에선 뷰어만 남기고 나머지 숨김 */
     body.fs #topbar, body.fs #sidebar { display:none; }
     body.fs #layout { grid-template-columns: 1fr !important; }
@@ -23,35 +24,35 @@
   </style>
 </head>
 <body>
-  <div id="app" style="padding:16px; max-width:1200px; margin:0 auto;">
+  <div id="app" style="padding:16px; max-width:1400px; margin:0 auto;">
     <header id="topbar" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;">
-      <h1 style="font-size:20px; font-weight:bold;">제15회 스누풀대회 전광판</h1>
-      <div style="display:flex; gap:8px;">
+      <h1 style="font-size:28px; font-weight:bold;">제15회 스누풀대회 전광판</h1>
+      <div style="display:flex; gap:12px;">
         <button id="tab-bracket" class="tab tab-active">대진표</button>
         <button id="tab-results" class="tab">기록</button>
-        <button id="fsBtn" class="btn" title="전체화면 전환">전체화면</button>
+        <button id="fsBtn" class="btn">전체화면</button>
       </div>
     </header>
 
     <section id="layout" style="display:grid; grid-template-columns: 1fr 2fr; gap:16px;">
-      <aside id="sidebar" class="card" style="padding:16px;">
+      <aside id="sidebar" class="card" style="padding:16px; font-size:18px;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-          <h2 id="list-title" style="font-weight:600;">경기</h2>
-          <div id="updatedAt" style="font-size:12px; color:#999;"></div>
+          <h2 id="list-title" style="font-weight:600; font-size:20px;">경기</h2>
+          <div id="updatedAt" style="font-size:14px; color:#999;"></div>
         </div>
         <div style="margin-bottom:8px;">
-          <input id="search" type="text" placeholder="경기번호/종목명 검색" style="width:100%; padding:6px 8px; border-radius:8px; background:#222; border:1px solid #444; color:#eee;" />
+          <input id="search" type="text" placeholder="경기번호/종목명 검색" style="width:100%; padding:10px 12px; border-radius:8px; background:#222; border:1px solid #444; color:#eee; font-size:18px;" />
         </div>
         <ul id="eventList" class="list-scroll"></ul>
       </aside>
 
-      <main id="viewerCard" class="card" style="padding:16px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-          <div style="display:flex; gap:8px;">
+      <main id="viewerCard" class="card" style="padding:24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; font-size:18px;">
+          <div style="display:flex; gap:12px;">
             <button id="prevBtn" class="btn" title="이전(←)">←</button>
             <button id="nextBtn" class="btn" title="다음(→)">→</button>
           </div>
-          <div style="font-size:12px; color:#999;">전체화면에서 ← → 키 이동 / ESC 종료</div>
+          <div style="font-size:16px; color:#999;">전체화면: Enter / ← → 이동 / ESC 종료</div>
         </div>
         <div id="viewer"></div>
       </main>
@@ -85,14 +86,15 @@
       listEl.innerHTML = '';
       state.filteredList.forEach((e, idx) => {
         const li = document.createElement('li');
-        li.style.padding = '6px 8px';
+        li.style.padding = '10px 12px';
         li.style.cursor = 'pointer';
         li.onmouseenter = ()=> li.style.background = '#222';
         li.onmouseleave = ()=> li.style.background = '';
         const span = document.createElement('span');
         span.textContent = fmtTitle(e);
+        span.style.fontSize = '18px';
         const badge = document.createElement('span');
-        badge.style.fontSize='12px'; badge.style.color='#aaa';
+        badge.style.fontSize='14px'; badge.style.color='#aaa'; badge.style.marginLeft='6px';
         badge.textContent = MODE==='bracket' ? (e.rows?.length||0)+'명' : (e.items?.length||0)+'명';
         li.append(span, badge);
         li.onclick = ()=>{ state.selectedIndex = idx; renderViewer(); highlightActive(); };
@@ -118,9 +120,9 @@
       if (!e) return;
 
       const title = document.createElement('div');
-      title.style.fontSize = '20px';
+      title.style.fontSize = '28px';
       title.style.fontWeight = 'bold';
-      title.style.marginBottom = '12px';
+      title.style.marginBottom = '16px';
       title.textContent = fmtTitle(e);
       v.appendChild(title);
 
@@ -161,7 +163,7 @@
       v.appendChild(table);
 
       if(state.totalPages>1){
-        const p=document.createElement('div'); p.style.fontSize='12px'; p.style.color='#aaa'; p.style.textAlign='right'; p.textContent=`페이지 ${state.page+1}/${state.totalPages}`; v.appendChild(p); }
+        const p=document.createElement('div'); p.style.fontSize='16px'; p.style.color='#aaa'; p.style.textAlign='right'; p.textContent=`페이지 ${state.page+1}/${state.totalPages}`; v.appendChild(p); }
     }
 
     function rebuild(mode){
@@ -201,7 +203,16 @@
       if(isFS()&&state.totalPages>1){ const next=state.page+delta; if(next>=0&&next<state.totalPages){ state.page=next; highlightActive(); renderViewer(); return; } }
       state.page=0; state.selectedIndex=(state.selectedIndex+delta+n)%n; highlightActive(); renderViewer();
     }
-    document.addEventListener('keydown',e=>{ if(!isFS())return; if(e.key==='ArrowLeft')move(-1); if(e.key==='ArrowRight')move(1); });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        if (isFS()) { exitFS(); } else { enterFS(); }
+      }
+      if (!isFS()) return;
+      if (e.key==='ArrowLeft') move(-1);
+      if (e.key==='ArrowRight') move(1);
+    });
+
     document.getElementById('prevBtn').onclick=()=>{ if(isFS())move(-1); };
     document.getElementById('nextBtn').onclick=()=>{ if(isFS())move(1); };
     document.getElementById('fsBtn').onclick=()=>{ isFS()?exitFS():enterFS(); };
