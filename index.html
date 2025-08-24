@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>스누풀 대회 전광판</title>
-  <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     html, body { height: 100%; background:#0a0a0a; color:#f3f4f6; }
@@ -23,14 +22,14 @@
       <div class="flex gap-2">
         <button id="tab-bracket" class="tab tab-active">대진표</button>
         <button id="tab-results" class="tab">기록</button>
+        <button id="fsBtn" class="btn ml-2" title="전체화면 전환">전체화면</button>
       </div>
     </header>
 
     <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <!-- Left: event list -->
       <aside class="card lg:col-span-4 p-4">
         <div class="flex items-center justify-between mb-2">
-          <h2 id="list-title" class="font-semibold">경기 목록</h2>
+          <h2 id="list-title" class="font-semibold">경기</h2>
           <div class="text-sm text-neutral-400" id="updatedAt"></div>
         </div>
         <div id="searchWrap" class="mb-2">
@@ -39,144 +38,35 @@
         <ul id="eventList" class="list-scroll overflow-y-auto divide-y divide-neutral-800"></ul>
       </aside>
 
-      <!-- Right: viewer -->
       <main class="lg:col-span-8 card p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
             <button id="prevBtn" class="btn" title="이전(←)">←</button>
             <button id="nextBtn" class="btn" title="다음(→)">→</button>
           </div>
-          <div class="text-sm text-neutral-400">← → 키로 이동 / 15초 자동새로고침</div>
+          <div class="text-sm text-neutral-400">전체화면에서 ← → 키 이동 / ESC 종료</div>
         </div>
         <div id="viewer"></div>
       </main>
     </section>
-
-    <footer class="mt-6 text-center text-xs text-neutral-500">Made for 경기장 현장 운영 · GitHub Pages 배포용 단일 파일</footer>
   </div>
 
   <script>
-    /***********************
-     * CONFIG
-     ***********************/
-// Apps Script 웹앱 URL
-const API_URL = "https://script.google.com/macros/s/AKfycbzMNzD5i5TdSyBAB3LwlRj_cu1wx8ZTnFEmevs5ubM41D2Bh1rDhVgRTArG1dxirwzZNA/exec";
-const AUTO_REFRESH_MS = 15000;
+    const API_URL = "https://script.google.com/macros/s/AKfycbzMNzD5i5TdSyBAB3LwlRj_cu1wx8ZTnFEmevs5ubM41D2Bh1rDhVgRTArG1dxirwzZNA/exec";
+    const AUTO_REFRESH_MS = 15000;
 
-    /***********************
-     * CSV UTIL
-     ***********************/
-    function parseCSV(text) {
-      // 간단 CSV 파서 (따옴표 처리)
-      const rows = [];
-      let i = 0, field = '', row = [], inQuotes = false;
-      while (i < text.length) {
-        const ch = text[i];
-        if (inQuotes) {
-          if (ch === '"' && text[i+1] === '"') { field += '"'; i += 2; continue; }
-          if (ch === '"') { inQuotes = false; i++; continue; }
-          field += ch; i++; continue;
-        } else {
-          if (ch === '"') { inQuotes = true; i++; continue; }
-          if (ch === ',') { row.push(field); field = ''; i++; continue; }
-          if (ch === '\n') { row.push(field); rows.push(row); field = ''; row = []; i++; continue; }
-          field += ch; i++;
-        }
-      }
-      row.push(field); rows.push(row);
-      return rows;
+    function isFS(){ return !!document.fullscreenElement; }
+    function enterFS(){ document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
+    function exitFS(){ document.exitFullscreen && document.exitFullscreen(); }
+    function updateFSUI(){
+      const arrowsVisible = isFS();
+      document.getElementById('prevBtn').style.display = arrowsVisible ? '' : 'none';
+      document.getElementById('nextBtn').style.display = arrowsVisible ? '' : 'none';
+      document.getElementById('fsBtn').textContent = isFS() ? '전체화면 종료' : '전체화면';
     }
+    document.addEventListener('fullscreenchange', updateFSUI);
 
-    function normalizeCell(s) { return (s ?? '').toString().replace(/\u00A0/g,' ').trim(); }
-
-    /***********************
-     * PARSERS
-     ***********************/
-    // 공통: A열에 "103-2 종목명..." 형태의 헤더가 등장
-    function isEventHeader(cellA) {
-      return /^\d+(?:-\d+)?\s+/.test(normalizeCell(cellA));
-    }
-
-    // 대진표 CSV → events: [{key:'103-2', main:'103', title:'...', heat:'2', rows:[{lane,name,team,rank,time,note}]}]
-    function parseBracket(csvRows) {
-      const events = [];
-      let current = null;
-      for (let r=0; r<csvRows.length; r++) {
-        const row = csvRows[r];
-        const a = normalizeCell(row[0]);
-        if (isEventHeader(a)) {
-          const m = a.match(/^(\d+(?:-\d+)?)[\s\t]+(.*)$/);
-          if (m) {
-            const heatKey = m[1];
-            const [main, heat] = heatKey.split('-');
-            current = { key: heatKey, main, title: m[2].trim(), heat: heat||'', rows: [] };
-            events.push(current);
-          }
-          continue;
-        }
-        // 표 헤더 감지: 레인 | 이름 | 팀명 | 순위 | 기록 | 비고
-        const c0 = normalizeCell(row[0]);
-        const c1 = normalizeCell(row[1]);
-        const c2 = normalizeCell(row[2]);
-        const isHeader = (c0==='레인' && c1==='이름' && c2==='팀명');
-        if (isHeader) {
-          // 데이터 블록 추출
-          let rr = r+1;
-          while (rr < csvRows.length) {
-            const rrRow = csvRows[rr];
-            const vals = rrRow.map(normalizeCell);
-            if (vals.every(v=>v==='')) break; // 빈 줄이면 끝
-            if (!current) break;
-            const [lane,name,team,rank,time,note] = vals;
-            if (!(name==='' && team==='')) current.rows.push({lane,name,team,rank,time,note});
-            rr++;
-          }
-          r = rr-1;
-        }
-      }
-      return events;
-    }
-
-    // 기록 CSV → events: [{main:'103', title:'...', items:[{rank,name,team,heat,lane,time,finalNote}]}]
-    function parseResults(csvRows) {
-      const events = [];
-      let current = null;
-      for (let r=0; r<csvRows.length; r++) {
-        const row = csvRows[r];
-        const a = normalizeCell(row[0]);
-        if (isEventHeader(a)) {
-          const m = a.match(/^(\d+)[\s\t]+(.*)$/); // 본 경기번호만 온다고 가정
-          if (m) {
-            current = { main: m[1], title: m[2].trim(), items: [] };
-            events.push(current);
-          }
-          continue;
-        }
-        // 표 헤더: 순위 | 이름 | 팀명 | 조 | 레인 | 기록 | 결승 진출
-        const c0 = normalizeCell(row[0]);
-        const c1 = normalizeCell(row[1]);
-        const c2 = normalizeCell(row[2]);
-        const isHeader = (c0==='순위' && c1==='이름' && c2==='팀명');
-        if (isHeader) {
-          let rr = r+1;
-          while (rr < csvRows.length) {
-            const vals = csvRows[rr].map(normalizeCell);
-            if (vals.every(v=>v==='')) break;
-            if (!current) break;
-            const [rank,name,team,heat,lane,time,finalNote] = vals;
-            if (!(name==='' && team==='')) current.items.push({rank,name,team,heat,lane,time,finalNote});
-            rr++;
-          }
-          r = rr-1;
-        }
-      }
-      return events;
-    }
-
-    /***********************
-     * UI RENDER
-     ***********************/
-    let MODE = 'bracket'; // 'bracket' | 'results'
+    let MODE = 'bracket';
     let state = { bracket: [], results: [], filteredList: [], selectedIndex: 0 };
 
     function fmtTitle(e) {
@@ -227,16 +117,16 @@ const AUTO_REFRESH_MS = 15000;
         const th = document.createElement('th');
         th.className = 'border border-neutral-700 px-2 py-1 font-medium';
         th.textContent = h;
-        thead.appendChild(trh);
         trh.appendChild(th);
       });
+      thead.appendChild(trh);
       const tbody = document.createElement('tbody');
 
       const rows = MODE==='bracket' ? e.rows : e.items;
       rows.forEach(r=>{
         const tr = document.createElement('tr');
         const cells = MODE==='bracket' ? [r.lane,r.name,r.team,r.rank,r.time,r.note] : [r.rank,r.name,r.team,r.heat,r.lane,r.time,r.finalNote];
-        cells.forEach((c,ci)=>{
+        cells.forEach(c=>{
           const td = document.createElement('td');
           td.className = 'border border-neutral-700 px-2 py-1 text-center';
           td.textContent = c || '';
@@ -254,7 +144,7 @@ const AUTO_REFRESH_MS = 15000;
       MODE = mode;
       document.getElementById('tab-bracket').classList.toggle('tab-active', MODE==='bracket');
       document.getElementById('tab-results').classList.toggle('tab-active', MODE==='results');
-      document.getElementById('list-title').textContent = MODE==='bracket' ? '대진표 경기(조 분리)' : '기록 경기(조 통합)';
+      document.getElementById('list-title').textContent = '경기';
       const list = MODE==='bracket' ? state.bracket : state.results;
       state.filteredList = list.slice();
       state.selectedIndex = 0;
@@ -262,28 +152,19 @@ const AUTO_REFRESH_MS = 15000;
       renderViewer();
     }
 
-    /***********************
-     * FETCH & SEARCH & NAV
-     ***********************/
-async function fetchAll() {
-  document.getElementById('updatedAt').textContent = '불러오는 중…';
-  const resp = await fetch(API_URL, { cache:'no-store' }).then(r => r.json());
-  if (!resp.ok) {
-    document.getElementById('updatedAt').textContent = 'API 오류';
-    return;
-  }
+    async function fetchAll() {
+      document.getElementById('updatedAt').textContent = '불러오는 중…';
+      const resp = await fetch(API_URL, { cache:'no-store' }).then(r=>r.json());
+      if (!resp.ok) {
+        document.getElementById('updatedAt').textContent = 'API 오류';
+        return;
+      }
+      state.bracket = resp.bracket;
+      state.results = resp.results;
+      rebuild(MODE);
+      document.getElementById('updatedAt').textContent = new Date(resp.updatedAt).toLocaleTimeString('ko-KR') + ' 업데이트';
+    }
 
-  // API에서 받은 JSON을 그대로 주입
-  state.bracket = resp.bracket;  // [{key, main, title, heat, rows:[...]}]
-  state.results = resp.results;  // [{main, title, items:[...]}]
-
-  rebuild(MODE);
-  document.getElementById('updatedAt').textContent =
-    new Date(resp.updatedAt).toLocaleTimeString('ko-KR') + ' 업데이트';
-}
-
-
-    // 검색
     document.getElementById('search').addEventListener('input', (e)=>{
       const q = e.target.value.trim();
       const list = MODE==='bracket' ? state.bracket : state.results;
@@ -291,7 +172,6 @@ async function fetchAll() {
       state.selectedIndex = 0; buildList(); renderViewer();
     });
 
-    // 키보드 좌우 이동
     function move(delta) {
       const n = state.filteredList.length;
       if (n===0) return;
@@ -299,17 +179,15 @@ async function fetchAll() {
       highlightActive(); renderViewer();
     }
     document.addEventListener('keydown', (e)=>{
+      if (!isFS()) return;
       if (e.key === 'ArrowLeft') move(-1);
       if (e.key === 'ArrowRight') move(1);
     });
-    document.getElementById('prevBtn').onclick = ()=>move(-1);
-    document.getElementById('nextBtn').onclick = ()=>move(1);
+    document.getElementById('prevBtn').onclick = ()=>{ if (isFS()) move(-1); };
+    document.getElementById('nextBtn').onclick = ()=>{ if (isFS()) move(1); };
+    document.getElementById('fsBtn').onclick = ()=>{ isFS() ? exitFS() : enterFS(); };
+    updateFSUI();
 
-    // 탭
-    document.getElementById('tab-bracket').onclick = ()=>rebuild('bracket');
-    document.getElementById('tab-results').onclick = ()=>rebuild('results');
-
-    // 주기 새로고침
     fetchAll();
     setInterval(fetchAll, AUTO_REFRESH_MS);
   </script>
