@@ -59,13 +59,9 @@
     /***********************
      * CONFIG
      ***********************/
-    // 반드시 스프레드시트를 "웹에 게시"(파일→공유→웹에 게시) 한 뒤, 해당 탭의 CSV 주소를 넣으세요.
-    // --- 대진표 (사진1과 동일 구조: 경기 헤더 + [레인,이름,팀명,순위,기록,비고])
-    const BRACKET_CSV_URL = "https://docs.google.com/spreadsheets/d/1wthsgB_XXeuXj1npqgIEqkUx6fkuxJ2VoatP_oYJ4cc/gviz/tq?tqx=out:csv&gid=0";
-    // --- 기록 (사진2와 동일 구조: 경기 헤더 + [순위,이름,팀명,조,레인,기록,결승 진출])
-    const RESULTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1LQujAdhVRqdXqGVq-x3St_ZDtxDWAZYEQEPYWVlKKno/gviz/tq?tqx=out:csv&gid=0";
-
-    const AUTO_REFRESH_MS = 15000;
+// Apps Script 웹앱 URL
+const API_URL = "https://script.google.com/macros/s/AKfycbzMNzD5i5TdSyBAB3LwlRj_cu1wx8ZTnFEmevs5ubM41D2Bh1rDhVgRTArG1dxirwzZNA/exec";
+const AUTO_REFRESH_MS = 15000;
 
     /***********************
      * CSV UTIL
@@ -269,21 +265,23 @@
     /***********************
      * FETCH & SEARCH & NAV
      ***********************/
-    async function fetchAll() {
-      document.getElementById('updatedAt').textContent = '불러오는 중…';
-      const [bText, rText] = await Promise.all([
-        fetch(BRACKET_CSV_URL, {cache:'no-store'}).then(r=>r.text()),
-        fetch(RESULTS_CSV_URL, {cache:'no-store'}).then(r=>r.text()),
-      ]);
-      const b = parseBracket(parseCSV(bText));
-      const r = parseResults(parseCSV(rText));
-      // 정렬: 키/메인 숫자순
-      b.sort((a,b)=>Number(a.key.split('-')[0])-Number(b.key.split('-')[0]) || (Number(a.heat||0)-Number(b.heat||0)));
-      r.sort((a,b)=>Number(a.main)-Number(b.main));
-      state.bracket = b; state.results = r;
-      rebuild(MODE);
-      document.getElementById('updatedAt').textContent = new Date().toLocaleTimeString('ko-KR') + ' 업데이트';
-    }
+async function fetchAll() {
+  document.getElementById('updatedAt').textContent = '불러오는 중…';
+  const resp = await fetch(API_URL, { cache:'no-store' }).then(r => r.json());
+  if (!resp.ok) {
+    document.getElementById('updatedAt').textContent = 'API 오류';
+    return;
+  }
+
+  // API에서 받은 JSON을 그대로 주입
+  state.bracket = resp.bracket;  // [{key, main, title, heat, rows:[...]}]
+  state.results = resp.results;  // [{main, title, items:[...]}]
+
+  rebuild(MODE);
+  document.getElementById('updatedAt').textContent =
+    new Date(resp.updatedAt).toLocaleTimeString('ko-KR') + ' 업데이트';
+}
+
 
     // 검색
     document.getElementById('search').addEventListener('input', (e)=>{
