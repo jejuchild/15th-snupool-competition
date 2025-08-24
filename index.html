@@ -26,7 +26,7 @@
 <body>
   <div id="app" style="padding:16px; max-width:1200px; margin:0 auto;">
     <header id="topbar" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;">
-      <h1 style="font-size:20px; font-weight:bold;">제15회 스누풀대회 전광판</h1>
+      <h1 style="font-size:20px; font-weight:bold;">제15회 SNUPOOL배 대학부 수영대회 전광판</h1>
       <div style="display:flex; gap:8px;">
         <button id="tab-bracket" class="tab tab-active">대진표</button>
         <button id="tab-results" class="tab">기록</button>
@@ -52,7 +52,7 @@
             <button id="prevBtn" class="btn" title="이전(←)">←</button>
             <button id="nextBtn" class="btn" title="다음(→)">→</button>
           </div>
-          <div style="font-size:12px; color:#999;">전체화면에서 ← → 키 이동 / ESC 종료</div>
+          <div style="font-size:12px; color:#999;">전체화면: Enter / ← → 이동 / ESC 종료</div>
         </div>
         <div id="viewer"></div>
       </main>
@@ -105,7 +105,7 @@
     function highlightActive() {
       const listEl = document.getElementById('eventList');
       ;[...listEl.children].forEach((li, i)=>{
-        li.style.background = (i===state.selectedIndex)?'#333':''];
+        li.style.background = (i===state.selectedIndex)?'#333':'';
       });
     }
 
@@ -202,19 +202,16 @@
       if(isFS()&&state.totalPages>1){ const next=state.page+delta; if(next>=0&&next<state.totalPages){ state.page=next; highlightActive(); renderViewer(); return; } }
       state.page=0; state.selectedIndex=(state.selectedIndex+delta+n)%n; highlightActive(); renderViewer();
     }
+
     document.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
-        if (isFS()) {
-          exitFS();
-        } else {
-          enterFS();
-        }
+        if (isFS()) { exitFS(); } else { enterFS(); }
       }
-
       if (!isFS()) return;
-      if (e.key === 'ArrowLeft') move(-1);
-      if (e.key === 'ArrowRight') move(1);
+      if (e.key==='ArrowLeft') move(-1);
+      if (e.key==='ArrowRight') move(1);
     });
+
     document.getElementById('prevBtn').onclick=()=>{ if(isFS())move(-1); };
     document.getElementById('nextBtn').onclick=()=>{ if(isFS())move(1); };
     document.getElementById('fsBtn').onclick=()=>{ isFS()?exitFS():enterFS(); };
