@@ -4,52 +4,54 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>스누풀 대회 전광판</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    html, body { height: 100%; background:#0a0a0a; color:#f3f4f6; }
-    .card { @apply rounded-2xl bg-neutral-900/70 shadow-xl border border-neutral-700; }
-    .btn { @apply inline-flex items-center justify-center px-3 py-2 rounded-xl bg-neutral-700 hover:bg-neutral-600 transition; }
-    .tab { @apply px-4 py-2 rounded-xl cursor-pointer; }
-    .tab-active { @apply bg-neutral-700; }
-    .list-scroll { height: calc(100vh - 220px); }
+    html, body { height: 100%; background:#0a0a0a; color:#f3f4f6; font-family:sans-serif; }
+    .card { border-radius:16px; background:#1a1a1a; box-shadow:0 2px 6px rgba(0,0,0,0.5); border:1px solid #333; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; padding:6px 12px; border-radius:8px; background:#444; cursor:pointer; }
+    .btn:hover { background:#666; }
+    .tab { padding:6px 12px; border-radius:8px; cursor:pointer; }
+    .tab-active { background:#555; }
+    .list-scroll { height: calc(100vh - 220px); overflow-y:auto; }
     .mono { font-variant-numeric: tabular-nums; }
-
+    table { width:100%; border-collapse:collapse; }
+    th, td { border:1px solid #555; padding:6px 8px; text-align:center; }
+    th { background:#222; }
     /* 전체화면에선 뷰어만 남기고 나머지 숨김 */
     body.fs #topbar, body.fs #sidebar { display:none; }
     body.fs #layout { grid-template-columns: 1fr !important; }
-    body.fs #viewerCard { @apply col-span-12; }
+    body.fs #viewerCard { grid-column: 1 / -1; }
   </style>
 </head>
 <body>
-  <div id="app" class="p-4 max-w-7xl mx-auto">
-    <header id="topbar" class="flex items-center justify-between gap-4 mb-4">
-      <h1 class="text-2xl font-bold">제15회 스누풀대회 전광판</h1>
-      <div class="flex gap-2">
+  <div id="app" style="padding:16px; max-width:1200px; margin:0 auto;">
+    <header id="topbar" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;">
+      <h1 style="font-size:20px; font-weight:bold;">제15회 스누풀대회 전광판</h1>
+      <div style="display:flex; gap:8px;">
         <button id="tab-bracket" class="tab tab-active">대진표</button>
         <button id="tab-results" class="tab">기록</button>
-        <button id="fsBtn" class="btn ml-2" title="전체화면 전환">전체화면</button>
+        <button id="fsBtn" class="btn" title="전체화면 전환">전체화면</button>
       </div>
     </header>
 
-    <section id="layout" class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <aside id="sidebar" class="card lg:col-span-4 p-4">
-        <div class="flex items-center justify-between mb-2">
-          <h2 id="list-title" class="font-semibold">경기</h2>
-          <div class="text-sm text-neutral-400" id="updatedAt"></div>
+    <section id="layout" style="display:grid; grid-template-columns: 1fr 2fr; gap:16px;">
+      <aside id="sidebar" class="card" style="padding:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <h2 id="list-title" style="font-weight:600;">경기</h2>
+          <div id="updatedAt" style="font-size:12px; color:#999;"></div>
         </div>
-        <div id="searchWrap" class="mb-2">
-          <input id="search" type="text" placeholder="경기번호/종목명 검색" class="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700" />
+        <div style="margin-bottom:8px;">
+          <input id="search" type="text" placeholder="경기번호/종목명 검색" style="width:100%; padding:6px 8px; border-radius:8px; background:#222; border:1px solid #444; color:#eee;" />
         </div>
-        <ul id="eventList" class="list-scroll overflow-y-auto divide-y divide-neutral-800"></ul>
+        <ul id="eventList" class="list-scroll"></ul>
       </aside>
 
-      <main id="viewerCard" class="lg:col-span-8 card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
+      <main id="viewerCard" class="card" style="padding:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <div style="display:flex; gap:8px;">
             <button id="prevBtn" class="btn" title="이전(←)">←</button>
             <button id="nextBtn" class="btn" title="다음(→)">→</button>
           </div>
-          <div class="text-sm text-neutral-400">전체화면에서 ← → 키 이동 / ESC 종료</div>
+          <div style="font-size:12px; color:#999;">전체화면에서 ← → 키 이동 / ESC 종료</div>
         </div>
         <div id="viewer"></div>
       </main>
@@ -65,15 +67,150 @@
     function exitFS(){ if (document.exitFullscreen) document.exitFullscreen(); }
     function updateFSUI(){
       const arrowsVisible = isFS();
-      document.getElementById('prevBtn').onclick = ()=>{ if (isFS()) move(-1); };
-    document.getElementById('nextBtn').onclick = ()=>{ if (isFS()) move(1); };
-    document.getElementById('fsBtn').onclick = ()=>{ isFS() ? exitFS() : enterFS(); };
-    document.getElementById('tab-bracket').onclick = ()=>{ state.page=0; rebuild('bracket'); };
-    document.getElementById('tab-results').onclick = ()=>{ state.page=0; rebuild('results'); };
+      document.getElementById('prevBtn').style.display = arrowsVisible ? '' : 'none';
+      document.getElementById('nextBtn').style.display = arrowsVisible ? '' : 'none';
+      document.getElementById('fsBtn').textContent = isFS() ? '전체화면 종료' : '전체화면';
+      document.body.classList.toggle('fs', isFS());
+      renderViewer();
+    }
+    document.addEventListener('fullscreenchange', updateFSUI);
+
+    let MODE = 'bracket';
+    let state = { bracket: [], results: [], filteredList: [], selectedIndex: 0, page: 0, totalPages: 1 };
+
+    function fmtTitle(e) { return MODE==='bracket' ? `${e.key} ${e.title}` : `${e.main} ${e.title}`; }
+
+    function buildList() {
+      const listEl = document.getElementById('eventList');
+      listEl.innerHTML = '';
+      state.filteredList.forEach((e, idx) => {
+        const li = document.createElement('li');
+        li.style.padding = '6px 8px';
+        li.style.cursor = 'pointer';
+        li.onmouseenter = ()=> li.style.background = '#222';
+        li.onmouseleave = ()=> li.style.background = '';
+        const span = document.createElement('span');
+        span.textContent = fmtTitle(e);
+        const badge = document.createElement('span');
+        badge.style.fontSize='12px'; badge.style.color='#aaa';
+        badge.textContent = MODE==='bracket' ? (e.rows?.length||0)+'명' : (e.items?.length||0)+'명';
+        li.append(span, badge);
+        li.onclick = ()=>{ state.selectedIndex = idx; renderViewer(); highlightActive(); };
+        listEl.appendChild(li);
+      });
+      highlightActive();
+    }
+
+    function highlightActive() {
+      const listEl = document.getElementById('eventList');
+      ;[...listEl.children].forEach((li, i)=>{
+        li.style.background = (i===state.selectedIndex)?'#333':'';
+      });
+    }
+
+    function getMaxRowsPerPage(){ return isFS() ? 12 : 20; }
+    function chunk(arr, size){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+
+    function renderViewer() {
+      const v = document.getElementById('viewer');
+      v.innerHTML = '';
+      const e = state.filteredList[state.selectedIndex];
+      if (!e) return;
+
+      const title = document.createElement('div');
+      title.style.fontSize = '20px';
+      title.style.fontWeight = 'bold';
+      title.style.marginBottom = '12px';
+      title.textContent = fmtTitle(e);
+      v.appendChild(title);
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      const headers = MODE==='bracket' ? ['레인','이름','팀명','순위','기록','비고'] : ['순위','이름','팀명','조','레인','기록','결승 진출'];
+      headers.forEach(h=>{
+        const th=document.createElement('th'); th.textContent=h; trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+
+      const tbody = document.createElement('tbody');
+      let rowsAll=[];
+      if (MODE==='bracket'){
+        const map={}; (e.rows||[]).forEach(r=>{ map[String(r.lane)] = r; });
+        for (let lane=1; lane<=8; lane++){
+          const r = map[String(lane)] || { lane, name:'', team:'', rank:'', time:'', note:'' };
+          rowsAll.push([r.lane,r.name,r.team,r.rank,r.time,r.note]);
+        }
+      } else {
+        (e.items||[]).forEach(r=> rowsAll.push([r.rank,r.name,r.team,r.heat,r.lane,r.time,r.finalNote]));
+      }
+
+      const pages=chunk(rowsAll,getMaxRowsPerPage());
+      state.totalPages=Math.max(1,pages.length);
+      if(state.page>=state.totalPages) state.page=0;
+      const rows=pages[state.page]||rowsAll;
+
+      rows.forEach(cols=>{
+        const tr=document.createElement('tr');
+        cols.forEach(c=>{ const td=document.createElement('td'); td.textContent=c||''; tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      v.appendChild(table);
+
+      if(state.totalPages>1){
+        const p=document.createElement('div'); p.style.fontSize='12px'; p.style.color='#aaa'; p.style.textAlign='right'; p.textContent=`페이지 ${state.page+1}/${state.totalPages}`; v.appendChild(p); }
+    }
+
+    function rebuild(mode){
+      MODE=mode;
+      document.getElementById('tab-bracket').classList.toggle('tab-active',MODE==='bracket');
+      document.getElementById('tab-results').classList.toggle('tab-active',MODE==='results');
+      document.getElementById('list-title').textContent='경기';
+      const list=MODE==='bracket'?state.bracket:state.results;
+      state.filteredList=list.slice(); state.selectedIndex=0;
+      buildList(); renderViewer();
+    }
+
+    async function fetchAll(){
+      document.getElementById('updatedAt').textContent='불러오는 중…';
+      try{
+        const res=await fetch(API_URL+"?t="+Date.now(),{cache:'no-store'});
+        const text=await res.text();
+        console.log('[API raw]',text);
+        let resp;
+        try{ resp=JSON.parse(text);}catch(e){ console.error('파싱실패',e); return; }
+        if(!resp||resp.ok!==true){ document.getElementById('updatedAt').textContent='API 오류'; return; }
+        state.bracket=resp.bracket||[]; state.results=resp.results||[];
+        rebuild(MODE);
+        document.getElementById('updatedAt').textContent=new Date(resp.updatedAt||Date.now()).toLocaleTimeString('ko-KR')+' 업데이트';
+      }catch(e){ console.error('fetch 실패',e); document.getElementById('updatedAt').textContent='네트워크 오류'; }
+    }
+
+    document.getElementById('search').addEventListener('input',e=>{
+      const q=e.target.value.trim();
+      const list=MODE==='bracket'?state.bracket:state.results;
+      state.filteredList=list.filter(ev=>fmtTitle(ev).includes(q));
+      state.selectedIndex=0; buildList(); renderViewer();
+    });
+
+    function move(delta){
+      const n=state.filteredList.length; if(n===0)return;
+      if(isFS()&&state.totalPages>1){ const next=state.page+delta; if(next>=0&&next<state.totalPages){ state.page=next; highlightActive(); renderViewer(); return; } }
+      state.page=0; state.selectedIndex=(state.selectedIndex+delta+n)%n; highlightActive(); renderViewer();
+    }
+    document.addEventListener('keydown',e=>{ if(!isFS())return; if(e.key==='ArrowLeft')move(-1); if(e.key==='ArrowRight')move(1); });
+    document.getElementById('prevBtn').onclick=()=>{ if(isFS())move(-1); };
+    document.getElementById('nextBtn').onclick=()=>{ if(isFS())move(1); };
+    document.getElementById('fsBtn').onclick=()=>{ isFS()?exitFS():enterFS(); };
+    document.getElementById('tab-bracket').onclick=()=>{ state.page=0; rebuild('bracket'); };
+    document.getElementById('tab-results').onclick=()=>{ state.page=0; rebuild('results'); };
     updateFSUI();
 
     fetchAll();
-    setInterval(fetchAll, AUTO_REFRESH_MS);
+    setInterval(fetchAll,AUTO_REFRESH_MS);
   </script>
 </body>
 </html>
