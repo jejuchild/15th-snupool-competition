@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>스누풀 대회 전광판</title>
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { height: 100%; background:#0a0a0a; color:#f3f4f6; }
+    .card { @apply rounded-2xl bg-neutral-900/70 shadow-xl border border-neutral-700; }
+    .btn { @apply inline-flex items-center justify-center px-3 py-2 rounded-xl bg-neutral-700 hover:bg-neutral-600 transition; }
+    .tab { @apply px-4 py-2 rounded-xl cursor-pointer; }
+    .tab-active { @apply bg-neutral-700; }
+    .list-scroll { height: calc(100vh - 220px); }
+    .mono { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div id="app" class="p-4 max-w-7xl mx-auto">
+    <header class="flex items-center justify-between gap-4 mb-4">
+      <h1 class="text-2xl font-bold">제15회 스누풀대회 전광판</h1>
+      <div class="flex gap-2">
+        <button id="tab-bracket" class="tab tab-active">대진표</button>
+        <button id="tab-results" class="tab">기록</button>
+      </div>
+    </header>
+
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Left: event list -->
+      <aside class="card lg:col-span-4 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 id="list-title" class="font-semibold">경기 목록</h2>
+          <div class="text-sm text-neutral-400" id="updatedAt"></div>
+        </div>
+        <div id="searchWrap" class="mb-2">
+          <input id="search" type="text" placeholder="경기번호/종목명 검색" class="w-full px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700" />
+        </div>
+        <ul id="eventList" class="list-scroll overflow-y-auto divide-y divide-neutral-800"></ul>
+      </aside>
+
+      <!-- Right: viewer -->
+      <main class="lg:col-span-8 card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <button id="prevBtn" class="btn" title="이전(←)">←</button>
+            <button id="nextBtn" class="btn" title="다음(→)">→</button>
+          </div>
+          <div class="text-sm text-neutral-400">← → 키로 이동 / 15초 자동새로고침</div>
+        </div>
+        <div id="viewer"></div>
+      </main>
+    </section>
+
+    <footer class="mt-6 text-center text-xs text-neutral-500">Made for 경기장 현장 운영 · GitHub Pages 배포용 단일 파일</footer>
+  </div>
+
+  <script>
+    /***********************
+     * CONFIG
+     ***********************/
+    // 반드시 스프레드시트를 "웹에 게시"(파일→공유→웹에 게시) 한 뒤, 해당 탭의 CSV 주소를 넣으세요.
+    // --- 대진표 (사진1과 동일 구조: 경기 헤더 + [레인,이름,팀명,순위,기록,비고])
+    const BRACKET_CSV_URL = "https://docs.google.com/spreadsheets/d/1wthsgB_XXeuXj1npqgIEqkUx6fkuxJ2VoatP_oYJ4cc/gviz/tq?tqx=out:csv&gid=0";
+    // --- 기록 (사진2와 동일 구조: 경기 헤더 + [순위,이름,팀명,조,레인,기록,결승 진출])
+    const RESULTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1LQujAdhVRqdXqGVq-x3St_ZDtxDWAZYEQEPYWVlKKno/gviz/tq?tqx=out:csv&gid=0";
+
+    const AUTO_REFRESH_MS = 15000;
+
+    /***********************
+     * CSV UTIL
+     ***********************/
+    function parseCSV(text) {
+      // 간단 CSV 파서 (따옴표 처리)
+      const rows = [];
+      let i = 0, field = '', row = [], inQuotes = false;
+      while (i < text.length) {
+        const ch = text[i];
+        if (inQuotes) {
+          if (ch === '"' && text[i+1] === '"') { field += '"'; i += 2; continue; }
+          if (ch === '"') { inQuotes = false; i++; continue; }
+          field += ch; i++; continue;
+        } else {
+          if (ch === '"') { inQuotes = true; i++; continue; }
+          if (ch === ',') { row.push(field); field = ''; i++; continue; }
+          if (ch === '\n') { row.push(field); rows.push(row); field = ''; row = []; i++; continue; }
+          field += ch; i++;
+        }
+      }
+      row.push(field); rows.push(row);
+      return rows;
+    }
+
+    function normalizeCell(s) { return (s ?? '').toString().replace(/\u00A0/g,' ').trim(); }
+
+    /***********************
+     * PARSERS
+     ***********************/
+    // 공통: A열에 "103-2 종목명..." 형태의 헤더가 등장
+    function isEventHeader(cellA) {
+      return /^\d+(?:-\d+)?\s+/.test(normalizeCell(cellA));
+    }
+
+    // 대진표 CSV → events: [{key:'103-2', main:'103', title:'...', heat:'2', rows:[{lane,name,team,rank,time,note}]}]
+    function parseBracket(csvRows) {
+      const events = [];
+      let current = null;
+      for (let r=0; r<csvRows.length; r++) {
+        const row = csvRows[r];
+        const a = normalizeCell(row[0]);
+        if (isEventHeader(a)) {
+          const m = a.match(/^(\d+(?:-\d+)?)[\s\t]+(.*)$/);
+          if (m) {
+            const heatKey = m[1];
+            const [main, heat] = heatKey.split('-');
+            current = { key: heatKey, main, title: m[2].trim(), heat: heat||'', rows: [] };
+            events.push(current);
+          }
+          continue;
+        }
+        // 표 헤더 감지: 레인 | 이름 | 팀명 | 순위 | 기록 | 비고
+        const c0 = normalizeCell(row[0]);
+        const c1 = normalizeCell(row[1]);
+        const c2 = normalizeCell(row[2]);
+        const isHeader = (c0==='레인' && c1==='이름' && c2==='팀명');
+        if (isHeader) {
+          // 데이터 블록 추출
+          let rr = r+1;
+          while (rr < csvRows.length) {
+            const rrRow = csvRows[rr];
+            const vals = rrRow.map(normalizeCell);
+            if (vals.every(v=>v==='')) break; // 빈 줄이면 끝
+            if (!current) break;
+            const [lane,name,team,rank,time,note] = vals;
+            if (!(name==='' && team==='')) current.rows.push({lane,name,team,rank,time,note});
+            rr++;
+          }
+          r = rr-1;
+        }
+      }
+      return events;
+    }
+
+    // 기록 CSV → events: [{main:'103', title:'...', items:[{rank,name,team,heat,lane,time,finalNote}]}]
+    function parseResults(csvRows) {
+      const events = [];
+      let current = null;
+      for (let r=0; r<csvRows.length; r++) {
+        const row = csvRows[r];
+        const a = normalizeCell(row[0]);
+        if (isEventHeader(a)) {
+          const m = a.match(/^(\d+)[\s\t]+(.*)$/); // 본 경기번호만 온다고 가정
+          if (m) {
+            current = { main: m[1], title: m[2].trim(), items: [] };
+            events.push(current);
+          }
+          continue;
+        }
+        // 표 헤더: 순위 | 이름 | 팀명 | 조 | 레인 | 기록 | 결승 진출
+        const c0 = normalizeCell(row[0]);
+        const c1 = normalizeCell(row[1]);
+        const c2 = normalizeCell(row[2]);
+        const isHeader = (c0==='순위' && c1==='이름' && c2==='팀명');
+        if (isHeader) {
+          let rr = r+1;
+          while (rr < csvRows.length) {
+            const vals = csvRows[rr].map(normalizeCell);
+            if (vals.every(v=>v==='')) break;
+            if (!current) break;
+            const [rank,name,team,heat,lane,time,finalNote] = vals;
+            if (!(name==='' && team==='')) current.items.push({rank,name,team,heat,lane,time,finalNote});
+            rr++;
+          }
+          r = rr-1;
+        }
+      }
+      return events;
+    }
+
+    /***********************
+     * UI RENDER
+     ***********************/
+    let MODE = 'bracket'; // 'bracket' | 'results'
+    let state = { bracket: [], results: [], filteredList: [], selectedIndex: 0 };
+
+    function fmtTitle(e) {
+      return MODE==='bracket' ? `${e.key} ${e.title}` : `${e.main} ${e.title}`;
+    }
+
+    function buildList() {
+      const listEl = document.getElementById('eventList');
+      listEl.innerHTML = '';
+      state.filteredList.forEach((e, idx) => {
+        const li = document.createElement('li');
+        li.className = 'py-2 px-2 hover:bg-neutral-800 cursor-pointer flex items-center justify-between';
+        const span = document.createElement('span');
+        span.textContent = fmtTitle(e);
+        const badge = document.createElement('span');
+        badge.className = 'text-xs text-neutral-400';
+        badge.textContent = MODE==='bracket' ? (e.rows?.length||0)+'명' : (e.items?.length||0)+'명';
+        li.append(span, badge);
+        li.onclick = ()=>{ state.selectedIndex = idx; renderViewer(); highlightActive(); };
+        listEl.appendChild(li);
+      });
+      highlightActive();
+    }
+
+    function highlightActive() {
+      const listEl = document.getElementById('eventList');
+      ;[...listEl.children].forEach((li, i)=>{
+        li.classList.toggle('bg-neutral-800', i===state.selectedIndex);
+      });
+    }
+
+    function renderViewer() {
+      const v = document.getElementById('viewer');
+      v.innerHTML = '';
+      const e = state.filteredList[state.selectedIndex];
+      if (!e) return;
+      const title = document.createElement('div');
+      title.className = 'text-xl font-semibold mb-3';
+      title.textContent = fmtTitle(e);
+      v.appendChild(title);
+
+      const table = document.createElement('table');
+      table.className = 'w-full text-sm mono';
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      const headers = MODE==='bracket' ? ['레인','이름','팀명','순위','기록','비고'] : ['순위','이름','팀명','조','레인','기록','결승 진출'];
+      headers.forEach(h=>{
+        const th = document.createElement('th');
+        th.className = 'border border-neutral-700 px-2 py-1 font-medium';
+        th.textContent = h;
+        thead.appendChild(trh);
+        trh.appendChild(th);
+      });
+      const tbody = document.createElement('tbody');
+
+      const rows = MODE==='bracket' ? e.rows : e.items;
+      rows.forEach(r=>{
+        const tr = document.createElement('tr');
+        const cells = MODE==='bracket' ? [r.lane,r.name,r.team,r.rank,r.time,r.note] : [r.rank,r.name,r.team,r.heat,r.lane,r.time,r.finalNote];
+        cells.forEach((c,ci)=>{
+          const td = document.createElement('td');
+          td.className = 'border border-neutral-700 px-2 py-1 text-center';
+          td.textContent = c || '';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      v.appendChild(table);
+    }
+
+    function rebuild(mode) {
+      MODE = mode;
+      document.getElementById('tab-bracket').classList.toggle('tab-active', MODE==='bracket');
+      document.getElementById('tab-results').classList.toggle('tab-active', MODE==='results');
+      document.getElementById('list-title').textContent = MODE==='bracket' ? '대진표 경기(조 분리)' : '기록 경기(조 통합)';
+      const list = MODE==='bracket' ? state.bracket : state.results;
+      state.filteredList = list.slice();
+      state.selectedIndex = 0;
+      buildList();
+      renderViewer();
+    }
+
+    /***********************
+     * FETCH & SEARCH & NAV
+     ***********************/
+    async function fetchAll() {
+      document.getElementById('updatedAt').textContent = '불러오는 중…';
+      const [bText, rText] = await Promise.all([
+        fetch(BRACKET_CSV_URL, {cache:'no-store'}).then(r=>r.text()),
+        fetch(RESULTS_CSV_URL, {cache:'no-store'}).then(r=>r.text()),
+      ]);
+      const b = parseBracket(parseCSV(bText));
+      const r = parseResults(parseCSV(rText));
+      // 정렬: 키/메인 숫자순
+      b.sort((a,b)=>Number(a.key.split('-')[0])-Number(b.key.split('-')[0]) || (Number(a.heat||0)-Number(b.heat||0)));
+      r.sort((a,b)=>Number(a.main)-Number(b.main));
+      state.bracket = b; state.results = r;
+      rebuild(MODE);
+      document.getElementById('updatedAt').textContent = new Date().toLocaleTimeString('ko-KR') + ' 업데이트';
+    }
+
+    // 검색
+    document.getElementById('search').addEventListener('input', (e)=>{
+      const q = e.target.value.trim();
+      const list = MODE==='bracket' ? state.bracket : state.results;
+      state.filteredList = list.filter(ev => (fmtTitle(ev).includes(q)));
+      state.selectedIndex = 0; buildList(); renderViewer();
+    });
+
+    // 키보드 좌우 이동
+    function move(delta) {
+      const n = state.filteredList.length;
+      if (n===0) return;
+      state.selectedIndex = (state.selectedIndex + delta + n) % n;
+      highlightActive(); renderViewer();
+    }
+    document.addEventListener('keydown', (e)=>{
+      if (e.key === 'ArrowLeft') move(-1);
+      if (e.key === 'ArrowRight') move(1);
+    });
+    document.getElementById('prevBtn').onclick = ()=>move(-1);
+    document.getElementById('nextBtn').onclick = ()=>move(1);
+
+    // 탭
+    document.getElementById('tab-bracket').onclick = ()=>rebuild('bracket');
+    document.getElementById('tab-results').onclick = ()=>rebuild('results');
+
+    // 주기 새로고침
+    fetchAll();
+    setInterval(fetchAll, AUTO_REFRESH_MS);
+  </script>
+</body>
+</html>
