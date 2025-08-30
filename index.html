@@ -27,10 +27,14 @@
   <div id="app" style="padding:16px; max-width:1400px; margin:0 auto;">
     <header id="topbar" style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;">
       <h1 style="font-size:28px; font-weight:bold;">제15회 스누풀대회 전광판</h1>
-      <div style="display:flex; gap:12px;">
+      <div style="display:flex; gap:12px; align-items:center;">
         <button id="tab-bracket" class="tab tab-active">대진표</button>
         <button id="tab-results" class="tab">기록</button>
         <button id="fsBtn" class="btn">전체화면</button>
+        <button id="refreshBtn" class="btn">새로고침</button>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:16px;">
+          <input type="checkbox" id="autoChk"> 자동
+        </label>
       </div>
     </header>
 
@@ -78,6 +82,7 @@
 
     let MODE = 'bracket';
     let state = { bracket: [], results: [], filteredList: [], selectedIndex: 0, page: 0, totalPages: 1 };
+    let autoTimer = null;
 
     function fmtTitle(e) { return MODE==='bracket' ? `${e.key} ${e.title}` : `${e.main} ${e.title}`; }
 
@@ -117,7 +122,7 @@
       const v = document.getElementById('viewer');
       v.innerHTML = '';
       const e = state.filteredList[state.selectedIndex];
-      if (!e) return;
+      if (!e) { v.innerHTML = '<div style="padding:24px; text-align:center; color:#aaa;">표시할 경기가 없습니다.</div>'; return; }
 
       const title = document.createElement('div');
       title.style.fontSize = '28px';
@@ -176,19 +181,114 @@
       buildList(); renderViewer();
     }
 
+    // 자동 새로고침 컨트롤
+    function startAuto(){ if (autoTimer) return; autoTimer = setInterval(fetchAll, AUTO_REFRESH_MS); }
+    function stopAuto(){ if (!autoTimer) return; clearInterval(autoTimer); autoTimer = null; }
+
     async function fetchAll(){
-      document.getElementById('updatedAt').textContent='불러오는 중…';
+      const updatedEl = document.getElementById('updatedAt');
+      updatedEl.textContent = '불러오는 중…';
+
+      // 현재 선택 상태 보존 (모드/검색/경기/페이지)
+      const q = (document.getElementById('search').value || '').trim();
+      const prevItem = state.filteredList[state.selectedIndex];
+      const prevId = prevItem ? (MODE==='bracket' ? prevItem.key : prevItem.main) : null;
+      const prevPage = state.page;
+
       try{
-        const res=await fetch(API_URL+"?t="+Date.now(),{cache:'no-store'});
-        const text=await res.text();
-        console.log('[API raw]',text);
-        let resp;
-        try{ resp=JSON.parse(text);}catch(e){ console.error('파싱실패',e); return; }
-        if(!resp||resp.ok!==true){ document.getElementById('updatedAt').textContent='API 오류'; return; }
-        state.bracket=resp.bracket||[]; state.results=resp.results||[];
-        rebuild(MODE);
-        document.getElementById('updatedAt').textContent=new Date(resp.updatedAt||Date.now()).toLocaleTimeString('ko-KR')+' 업데이트';
-      }catch(e){ console.error('fetch 실패',e); document.getElementById('updatedAt').textContent='네트워크 오류'; }
+        const res = await fetch(API_URL + "?t=" + Date.now(), { cache:'no-store' });
+        const text = await res.text();
+        let resp; try { resp = JSON.parse(text); } catch(e){ updatedEl.textContent='API 응답 파싱 실패'; return; }
+        if (!resp || resp.ok !== true) { updatedEl.textContent = 'API 오류'; return; }
+
+        // 데이터 반영
+        state.bracket = Array.isArray(resp.bracket) ? resp.bracket : [];
+        state.results = Array.isArray(resp.results) ? resp.results : [];
+
+        // 현재 모드 유지 + 필터 적용
+        const list = (MODE==='bracket') ? state.bracket : state.results;
+        state.filteredList = q ? list.filter(ev => fmtTitle(ev).includes(q)) : list.slice();
+
+        // 선택 복구 (동일 key/main)
+        let idx = -1;
+        if (prevId != null) {
+          idx = state.filteredList.findIndex(ev => (MODE==='bracket' ? ev.key : ev.main) === prevId);
+        }
+        if (idx < 0) {
+          // 기존 인덱스가 유효하면 유지, 아니면 0
+          if (state.filteredList.length) {
+            state.selectedIndex = Math.min(state.selectedIndex, state.filteredList.length - 1);
+          } else {
+            state.selectedIndex = 0;
+          }
+        } else {
+          state.selectedIndex = idx;
+        }
+
+        // 렌더 & 페이지 복구
+        buildList();
+        renderViewer(); // 여기서 totalPages 계산됨
+        if (prevPage >= 0 && prevPage < state.totalPages) {
+          state.page = prevPage;
+          renderViewer();
+        } else {
+          state.page = 0;
+        }
+
+        updatedEl.textContent = new Date(resp.updatedAt || Date.now()).toLocaleTimeString('ko-KR') + ' 업데이트';
+      }catch(e){
+        updatedEl.textContent = '네트워크 오류';
+      }
+    }
+
+        // 선택 복구
+        let idx = -1;
+        if (prevId != null) {
+          idx = state.filteredList.findIndex(ev => (MODE==='bracket' ? ev.key : ev.main) === prevId);
+        }
+        state.selectedIndex = (idx >= 0) ? idx : (state.filteredList.length ? 0 : 0);
+
+        // 렌더 & 페이지 복구
+        buildList();
+        renderViewer();
+        if (idx >= 0 && prevPage >= 0 && prevPage < state.totalPages) { state.page = prevPage; renderViewer(); }
+        else { state.page = 0; }
+
+        updatedEl.textContent = new Date(resp.updatedAt || Date.now()).toLocaleTimeString('ko-KR') + ' 업데이트';
+      }catch(e){ updatedEl.textContent = '네트워크 오류(이전 데이터 유지)'; }
+    }
+        state.selectedIndex = (idx >= 0) ? idx : (state.filteredList.length ? 0 : 0);
+
+        // 렌더 & 페이지 복구
+        buildList();
+        renderViewer(); // 이 호출에서 state.totalPages 계산됨
+        if (prevPage >= 0 && prevPage < state.totalPages) {
+          state.page = prevPage;
+          renderViewer();
+        } else {
+          state.page = 0; // 범위 밖이면 초기화
+        }
+
+        updatedEl.textContent = new Date(resp.updatedAt || Date.now()).toLocaleTimeString('ko-KR') + ' 업데이트';
+      } catch (e) {
+        updatedEl.textContent = '네트워크 오류';
+      }
+    }
+        state.selectedIndex = idx >= 0 ? idx : 0;
+
+        // 렌더 + 페이지 복구 시도
+        buildList();
+        renderViewer();
+        if (idx >= 0) {
+          if (prevPage < state.totalPages) state.page = prevPage; else state.page = 0;
+          renderViewer();
+        }
+
+        updated.textContent = new Date(resp.updatedAt || Date.now()).toLocaleTimeString('ko-KR') + ' 업데이트';
+      }catch(e){
+        updated.textContent = '네트워크 오류';
+      }
+    }catch(e){ console.error('fetch 실패',e); document.getElementById('updatedAt').textContent='네트워크 오류'; }
     }
 
     document.getElementById('search').addEventListener('input',e=>{
@@ -221,7 +321,13 @@
     updateFSUI();
 
     fetchAll();
-    setInterval(fetchAll,AUTO_REFRESH_MS);
+
+    // 수동 새로고침 버튼 + 자동 토글
+    document.getElementById('refreshBtn').onclick = ()=> fetchAll();
+    const autoChk = document.getElementById('autoChk');
+    autoChk.addEventListener('change', ()=>{ if (autoChk.checked) startAuto(); else stopAuto(); });
+    // 기본은 수동 새로고침 (토글 켜면 자동 시작)
+
   </script>
 </body>
 </html>
